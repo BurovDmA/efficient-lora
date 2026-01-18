@@ -1,0 +1,7 @@
+save_peft_adapter:
+  _target_: src.callbacks.save_peft_adapter.SavePeftAdapterCallback
+  dirpath: ${paths.output_dir}/adapters
+  every_n_epochs: 1
+  save_on_train_end: True
+
+

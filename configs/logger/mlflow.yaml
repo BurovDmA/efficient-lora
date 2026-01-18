@@ -4,7 +4,11 @@ mlflow:
   _target_: lightning.pytorch.loggers.mlflow.MLFlowLogger
   # experiment_name: ""
   # run_name: ""
-  tracking_uri: ${paths.log_dir}/mlflow/mlruns # run `mlflow ui` command inside the `logs/mlflow/` dir to open the UI
+  # NOTE:
+  # - if you want sqlite backend (database.db), start mlflow server:
+  #     ./scripts/mlflow_server.sh
+  # - then point tracking_uri to the server
+  tracking_uri: http://127.0.0.1:5000
   tags: null
   # save_dir: "./mlruns"
   prefix: ""

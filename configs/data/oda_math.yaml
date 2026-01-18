@@ -1,0 +1,7 @@
+defaults:
+  - parquet_lm
+  - _self_
+
+data_files: ${data.data_dir}/OpenDataArena_ODA-Math-460k_10000.parquet
+
+

@@ -1,0 +1,5 @@
+resource_monitor:
+  _target_: src.callbacks.resource_monitor.ResourceMonitorCallback
+  log_every_n_steps: 50
+
+

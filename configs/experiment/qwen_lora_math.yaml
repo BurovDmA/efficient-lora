@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - override /data: oda_math
+  - override /model: causal_lm_lora
+  - override /callbacks: lm_default
+  - override /logger: mlflow
+  - override /trainer: mps
+  - _self_
+
+tags: ["qwen", "lora", "sft", "math"]
+
+seed: 42
+
+trainer:
+  max_epochs: 1
+  log_every_n_steps: 5
+
+test: False
+
+

@@ -1,0 +1,35 @@
+_target_: src.data.parquet_lm_datamodule.ParquetCausalLMDataModule
+
+# You can pass a single glob or a list of files/globs
+# IMPORTANT: do NOT point this to multiple domain datasets if you want a separate adapter per domain.
+data_files: ???
+
+# Base dir for parquet files (datasets live outside `efficient-lora/`)
+data_dir: ${paths.root_dir}/../datasets/data
+
+# Usually should match the model tokenizer
+tokenizer_name_or_path: ${model.model_name_or_path}
+
+batch_size: 2
+num_workers: 0
+pin_memory: False
+
+seed: 42
+val_size: 0.01
+
+max_length: 1024
+add_eos: False
+trust_remote_code: True
+
+# Optional:
+# - if specified, will use this column directly as text
+text_column: null
+
+# Optional python `.format(**row)` template. If fails, falls back to heuristics.
+prompt_template: null
+
+# If True and tokenizer supports it, will format each row as chat messages
+use_chat_template: True
+system_prompt: null
+
+

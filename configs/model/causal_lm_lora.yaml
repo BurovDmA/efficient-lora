@@ -1,0 +1,38 @@
+_target_: src.models.causal_lm_lora_module.CausalLMLoRALitModule
+
+# Base model (decoder-only / CausalLM)
+model_name_or_path: sshleifer/tiny-gpt2
+trust_remote_code: True
+
+# dtype: "auto" | "bf16" | "fp16" | "fp32" | null
+torch_dtype: auto
+gradient_checkpointing: True
+use_cache: False
+
+# LoRA params
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+
+# For Qwen/LLaMA-like models this usually works well:
+lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+lora_bias: "none"
+
+# Optional: path to existing adapter to continue training
+lora_adapter_path: null
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 2e-4
+  weight_decay: 0.0
+
+# Recommended scheduler for LM; uses `num_training_steps` from Trainer
+scheduler:
+  _target_: transformers.get_linear_schedule_with_warmup
+  _partial_: true
+  num_warmup_steps: 50
+
+compile: false
+
+

@@ -9,6 +9,13 @@ hydra-core==1.3.2
 hydra-colorlog==1.2.0
 hydra-optuna-sweeper==1.2.0
 
+# --------- hf / llm finetuning --------- #
+transformers>=4.38.0
+datasets>=2.18.0
+peft>=0.10.0
+accelerate>=0.28.0
+sentencepiece>=0.1.99
+
 # --------- loggers --------- #
 # wandb
 # neptune-client
@@ -22,3 +29,7 @@ pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
 pytest          # tests
 # sh            # for running bash commands in some tests (linux/macos only)
+
+# --------- monitoring --------- #
+mlflow>=2.10.0
+psutil>=5.9.0

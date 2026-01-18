@@ -1,0 +1,7 @@
+defaults:
+  - parquet_lm
+  - _self_
+
+data_files: ${data.data_dir}/nvidia_OpenCodeInstruct_10000.parquet
+
+
