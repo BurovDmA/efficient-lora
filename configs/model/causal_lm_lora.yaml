@@ -10,6 +10,7 @@ gradient_checkpointing: True
 use_cache: False
 
 # LoRA params
+adapter_type: lora  # lora | l1ra
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05
@@ -20,6 +21,15 @@ lora_bias: "none"
 
 # Optional: path to existing adapter to continue training
 lora_adapter_path: null
+
+# L1RA params (used when adapter_type: l1ra)
+l1ra_lambda: 1e-3
+l1ra_eta_c: 1e-2
+l1ra_rank_update_ratio: 0.1
+l1ra_prune_threshold: 1e-6
+l1ra_reassign: true
+l1ra_exclude_pruned: true
+l1ra_warmup_steps: 0
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -34,5 +44,13 @@ scheduler:
   num_warmup_steps: 50
 
 compile: false
+
+# Adapter saving (handled inside LightningModule to avoid callback instantiation issues)
+save_adapter_dir: ${paths.output_dir}/adapters
+save_adapter_every_n_epochs: 1
+save_adapter_on_train_end: True
+
+# Resource logging (handled inside LightningModule)
+log_resource_every_n_steps: 50
 
 

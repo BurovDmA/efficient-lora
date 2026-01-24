@@ -1,0 +1,56 @@
+# @package _global_
+
+# Minimal L1RA experiment config (core knobs only)
+defaults:
+  - override /model: causal_lm_lora
+  - override /data: cot_cooking
+  - override /callbacks: lm_default
+  - override /logger: mlflow
+  - override /trainer: gpu
+  - _self_
+
+# Dataset choice: switch /data to one of
+#   - oda_math
+#   - opencodeinstruct
+#   - cot_cooking
+# or override on CLI: data.data_files=/path/to/file.parquet
+
+model:
+  adapter_type: l1ra
+  model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct
+
+  optimizer:
+    lr: 2e-4
+
+  scheduler:
+    _target_: transformers.get_linear_schedule_with_warmup
+    _partial_: true
+    num_warmup_steps: 50
+
+  # L1RA-specific knobs
+  l1ra_lambda: 1e-3
+  l1ra_eta_c: 1e-2
+  l1ra_rank_update_ratio: 0.1
+  l1ra_warmup_steps: 0
+  l1ra_prune_threshold: 1e-6
+  l1ra_reassign: true
+  l1ra_exclude_pruned: true
+
+# Common extra knobs (edit as needed)
+data:
+  max_length: 1024
+  batch_size: 8
+
+trainer:
+  max_epochs: 3
+
+seed: 42
+
+test: False
+
+logger:
+  mlflow:
+    tracking_uri: http://127.0.0.1:5000
+    experiment_name: "l1ra_base_cot_cooking"
+    run_name: "qwen_l1ra_base"
+

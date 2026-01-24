@@ -10,7 +10,7 @@ data_dir: ${paths.root_dir}/../datasets/data
 # Usually should match the model tokenizer
 tokenizer_name_or_path: ${model.model_name_or_path}
 
-batch_size: 2
+batch_size: 8
 num_workers: 0
 pin_memory: False
 

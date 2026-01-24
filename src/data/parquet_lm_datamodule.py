@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from glob import glob
+import os
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import torch
@@ -18,8 +19,15 @@ class CausalLMCollator:
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         has_labels = "labels" in features[0]
 
+        # tokenizer.pad can't handle ragged `labels`, so drop them before padding
+        features_no_labels: List[Dict[str, Any]] = []
+        for f in features:
+            if has_labels and "labels" in f:
+                f = {k: v for k, v in f.items() if k != "labels"}
+            features_no_labels.append(f)
+
         batch = self.tokenizer.pad(
-            features,
+            features_no_labels,
             padding=True,
             return_tensors="pt",
         )
@@ -60,6 +68,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
         self,
         data_files: Union[str, Sequence[str]],
         tokenizer_name_or_path: str,
+        data_dir: Optional[str] = None,
         batch_size: int = 2,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -86,15 +95,22 @@ class ParquetCausalLMDataModule(LightningDataModule):
 
     def _resolve_files(self) -> List[str]:
         data_files = self.hparams.data_files
+        data_dir = self.hparams.data_dir
         if isinstance(data_files, str):
             # allow glob patterns
-            expanded = glob(data_files)
+            path = data_files
+            if data_dir and not os.path.isabs(path):
+                path = os.path.join(data_dir, path)
+            expanded = glob(path)
             return expanded if expanded else [data_files]
         out: List[str] = []
         for item in list(data_files):
             if isinstance(item, str):
-                expanded = glob(item)
-                out.extend(expanded if expanded else [item])
+                path = item
+                if data_dir and not os.path.isabs(path):
+                    path = os.path.join(data_dir, path)
+                expanded = glob(path)
+                out.extend(expanded if expanded else [path])
         return out
 
     def prepare_data(self) -> None:
@@ -224,7 +240,6 @@ class ParquetCausalLMDataModule(LightningDataModule):
             tok["labels"] = [ids[:] for ids in tok["input_ids"]]
             return tok
 
-        # If we want assistant-only loss, we need row-wise access to original columns to build prompt/full.
         if self.hparams.use_chat_template and hasattr(tokenizer, "apply_chat_template"):
             def _tokenize_chat(ex: Dict[str, Any]) -> Dict[str, Any]:
                 q = ex.get("question")

@@ -1,0 +1,340 @@
+import warnings
+from itertools import chain
+import re
+
+import torch
+from transformers.pytorch_utils import Conv1D
+import torch.nn.functional as F
+
+from peft.tuners.lora import LoraConfig, LoraModel
+from peft.tuners.tuners_utils import BaseTunerLayer
+from peft.utils import (
+    TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING,
+    _freeze_adapter,
+)
+
+from .layer import L1RALayer, L1RALinear
+
+
+class L1RAModel(LoraModel):
+
+    def __init__(self, model, config, adapter_name):
+        super().__init__(model, config, adapter_name)
+
+        self.exclude_pruned = self.peft_config[adapter_name].exclude_pruned
+
+        traininable_mode_counter = 0
+        for config in self.peft_config.values():
+            if not config.inference_mode:
+                traininable_mode_counter += 1
+
+        if traininable_mode_counter > 1:
+            raise ValueError(
+                "L1RAModel supports only 1 trainable adapter. "
+                "When using multiple adapters, set inference_mode to True for all adapters except the one you want to train."
+            )
+
+        if self.peft_config[adapter_name].inference_mode:
+            _freeze_adapter(self.model, adapter_name)
+        else:
+            self.trainable_adapter_name = adapter_name
+
+        self.rank_evolution = []
+        self.num_training_steps = 0
+        self.stored_l1ra_lambda = None
+        self.threshold = 0.0
+
+    def _check_new_adapter_config(self, config: LoraConfig) -> None:
+        super()._check_new_adapter_config(config)
+
+        traininable_mode_counter = 0
+        for config_ in self.peft_config.values():
+            if not config_.inference_mode:
+                traininable_mode_counter += 1
+
+        if traininable_mode_counter > 1:
+            raise ValueError(
+                f"{self.__class__.__name__} supports only 1 trainable adapter. "
+                "When using multiple adapters, set inference_mode to True for all adapters except the one "
+                "you want to train."
+            )
+
+    def _create_and_replace(
+        self,
+        lora_config,
+        adapter_name,
+        target,
+        target_name,
+        parent,
+        current_key,
+    ):
+        pattern_keys = list(chain(lora_config.rank_pattern.keys(), lora_config.alpha_pattern.keys()))
+        target_name_key = next(filter(lambda key: re.match(rf".*\.{key}$", current_key), pattern_keys), current_key)
+        r = lora_config.rank_pattern.get(target_name_key, lora_config.r)
+        alpha = lora_config.alpha_pattern.get(target_name_key, lora_config.lora_alpha)
+
+        kwargs = {
+            "r": r,
+            "lora_alpha": alpha,
+            "lora_dropout": lora_config.lora_dropout,
+            "fan_in_fan_out": lora_config.fan_in_fan_out,
+            "init_lora_weights": lora_config.init_lora_weights,
+        }
+
+        if not isinstance(target, L1RALayer):
+            new_module = self._create_new_module(lora_config, adapter_name, target, **kwargs)
+            if adapter_name != self.active_adapter:
+                new_module.requires_grad_(False)
+            self._replace_module(parent, target_name, new_module, target)
+        else:
+            target.update_layer(
+                adapter_name,
+                lora_config.r,
+                lora_config.lora_alpha,
+                lora_config.lora_dropout,
+                lora_config.init_lora_weights,
+            )
+
+    @staticmethod
+    def _create_new_module(lora_config, adapter_name, target, **kwargs):
+        if isinstance(target, BaseTunerLayer):
+            target_base_layer = target.get_base_layer()
+        else:
+            target_base_layer = target
+
+        if isinstance(target_base_layer, torch.nn.Linear):
+            if kwargs["fan_in_fan_out"]:
+                warnings.warn(
+                    "fan_in_fan_out is set to True but the target module is `torch.nn.Linear`. "
+                    "Setting fan_in_fan_out to False."
+                )
+                kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
+        elif isinstance(target_base_layer, Conv1D):
+            if not kwargs["fan_in_fan_out"]:
+                warnings.warn(
+                    "fan_in_fan_out is set to False but the target module is `Conv1D`. "
+                    "Setting fan_in_fan_out to True."
+                )
+                kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = True
+        else:
+            raise ValueError(
+                f"Target module {target} is not supported. "
+                f"Currently, only `torch.nn.Linear` and `Conv1D` are supported."
+            )
+        new_module = L1RALinear(target, adapter_name, **kwargs)
+
+        return new_module
+
+    @staticmethod
+    def _prepare_adapter_config(peft_config, model_config):
+        if peft_config.target_modules is None:
+            if model_config["model_type"] not in TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING:
+                raise ValueError("Please specify `target_modules` in `peft_config`")
+            peft_config.target_modules = TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING[
+                model_config["model_type"]
+            ]
+        return peft_config
+
+    def __getattr__(self, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.model, name)
+
+    def forward(self, evaluation=False, *args, **kwargs):
+        outputs = self.model.forward(*args, **kwargs)
+
+        if (
+            (getattr(outputs, "loss", None) is not None)
+            and isinstance(outputs.loss, torch.Tensor)
+            and not evaluation
+        ):
+            sparse_reg_weight = self.peft_config[self.trainable_adapter_name].l1ra_lambda
+            if sparse_reg_weight < 0:
+                raise ValueError("sparse_reg_weight should be greater or equal than 0.")
+
+        return outputs
+
+    def set_threshold(self, lr):
+        self.threshold = (
+            lr * self.peft_config[self.trainable_adapter_name].l1ra_lambda
+            + self.peft_config[self.trainable_adapter_name].prune_threshold
+        )
+
+    def normalize_c(self):
+        gate_scale = 1 / self.peft_config[self.trainable_adapter_name].r
+        with torch.no_grad():
+            for n, p in self.model.named_parameters():
+                if "lora_A" in n and self.trainable_adapter_name in n:
+                    A_matrix = p
+
+                if "lora_c" in n and self.trainable_adapter_name in n:
+                    scale_factor = p.max()
+                    p.mul_(gate_scale / scale_factor)
+                    A_matrix.mul_(scale_factor)
+                    A_matrix = None
+
+    def update_ranks(self, global_step, num_training_steps, num_warmup_steps):
+        if 0 <= self.peft_config[self.trainable_adapter_name].rank_update_ratio < 1:
+            interval = int(self.peft_config[self.trainable_adapter_name].rank_update_ratio * num_training_steps)
+        else:
+            interval = int(self.peft_config[self.trainable_adapter_name].rank_update_ratio)
+
+        if global_step % interval != 0 or global_step <= num_warmup_steps:
+            return False
+
+        t = self.threshold
+
+        block_names = []
+        for n, m in self.model.named_modules():
+            if "lora" in n and "lora_dropout" not in n:
+                name = ".".join(n.split(".")[:-1])
+                if name not in block_names:
+                    block_names.append(name)
+
+        min_values = []
+        pruned_idxs = []
+        spare_ranks = 0
+        pruned = 0
+        for i, n in enumerate(block_names):
+            if isinstance(self.active_adapter, list):
+                active_adapter = self.active_adapter[0]
+            else:
+                active_adapter = self.active_adapter
+
+            block = self.get_module_by_attribute(self.model, n)
+            mask = block.lora_c[active_adapter] < t
+            ranks_to_prune = mask.nonzero(as_tuple=True)[0]
+            if block.lora_c[active_adapter].numel() > 0:
+                min_values.append(block.lora_c[active_adapter].min())
+
+            if ranks_to_prune.numel() > 0:
+                pruned_idxs.append(i)
+
+                if ranks_to_prune.numel() == block.lora_c[active_adapter].numel():
+                    ranks_to_prune = ranks_to_prune[:-1]
+
+                spare_ranks += ranks_to_prune.numel()
+
+            for r in ranks_to_prune.flip(dims=(0,)):
+                with torch.no_grad():
+                    pruned += 1
+                    block.lora_c[active_adapter] = torch.nn.parameter.Parameter(
+                        data=self.remove_elem(block.lora_c[active_adapter], r),
+                        requires_grad=True,
+                    )
+                    block.lora_A[active_adapter] = torch.nn.parameter.Parameter(
+                        data=self.remove_col(block.lora_A[active_adapter], r),
+                        requires_grad=True,
+                    )
+                    block.lora_B[active_adapter] = torch.nn.parameter.Parameter(
+                        data=self.remove_row(block.lora_B[active_adapter], r),
+                        requires_grad=True,
+                    )
+
+        if self.peft_config[self.trainable_adapter_name].reassign:
+            s = 0
+            for n, p in self.model.named_parameters():
+                if "lora_c" in n:
+                    s += p.numel()
+
+            min_values = torch.stack(min_values)
+            to_expand = min_values.argsort(descending=True)
+
+            if self.exclude_pruned:
+                for p in pruned_idxs:
+                    to_expand = to_expand[to_expand != p]
+
+            if len(to_expand) > 0:
+                with torch.no_grad():
+                    i = 0
+                    for r in range(spare_ranks):
+                        if i >= len(to_expand):
+                            i = 0
+
+                        idx = to_expand[i]
+                        block = self.get_module_by_attribute(self.model, block_names[idx])
+                        block.lora_c[active_adapter] = torch.nn.parameter.Parameter(
+                            data=self.expand_c(block.lora_c[active_adapter]),
+                            requires_grad=True,
+                        )
+                        block.lora_A[active_adapter] = torch.nn.parameter.Parameter(
+                            data=self.expand_A(block.lora_A[active_adapter]),
+                            requires_grad=True,
+                        )
+                        block.lora_B[active_adapter] = torch.nn.parameter.Parameter(
+                            data=self.expand_B(block.lora_B[active_adapter]),
+                            requires_grad=True,
+                        )
+
+                        i += 1
+
+        self.rank_distribution = []
+        for n, p in self.named_parameters():
+            if "lora_c" in n:
+                self.rank_distribution.append(p.numel())
+
+        self.rank_evolution.append(self.rank_distribution)
+
+        rank_pattern = {n: r for n, r in zip(block_names, self.rank_distribution)}
+        self.peft_config[active_adapter].rank_pattern = rank_pattern
+
+        torch.cuda.empty_cache()
+        self.reassigned_ranks = spare_ranks
+
+        if spare_ranks == 0:
+            return False
+
+        return True
+
+    def remove_elem(self, tensor, i):
+        return torch.cat([tensor[0:i], tensor[i + 1 :]])
+
+    def remove_row(self, tensor, i):
+        return torch.cat([tensor[0:i, :], tensor[i + 1 :, :]], dim=0)
+
+    def remove_col(self, tensor, i):
+        return torch.cat([tensor[:, 0:i], tensor[:, i + 1 :]], dim=1)
+
+    def expand_c(self, c):
+        element = torch.ones((1,)).cuda()
+        return torch.cat([c, element])
+
+    def expand_A(self, A):
+        if isinstance(self.active_adapter, list):
+            active_adapter = self.active_adapter[0]
+        else:
+            active_adapter = self.active_adapter
+        col_size = A.size()[0]
+        vector = torch.randn(col_size, 1).cuda() * 1 / self.peft_config[active_adapter].r
+
+        return torch.cat([A, vector], dim=1)
+
+    def expand_B(self, B):
+        row_size = B.size()[1]
+        vector = torch.zeros(1, row_size).cuda()
+        return torch.cat([B, vector])
+
+    def get_module_by_attribute(self, model, attr):
+        attributes = attr.split(".")
+        prev = model
+        for a in attributes:
+            if a.isdigit():
+                prev = prev[int(a)]
+            else:
+                prev = getattr(prev, a)
+        return prev
+
+    def eval(self):
+        self.stored_l1ra_lambda = self.peft_config[self.trainable_adapter_name].l1ra_lambda
+        self.peft_config[self.trainable_adapter_name].l1ra_lambda = 0
+        return super().eval()
+
+    def train(self, mode: bool = True):
+        if mode is False:
+            self.stored_l1ra_lambda = self.peft_config[self.trainable_adapter_name].l1ra_lambda
+            self.peft_config[self.trainable_adapter_name].l1ra_lambda = 0
+            return super().train(mode)
+        if self.stored_l1ra_lambda is not None:
+            self.peft_config[self.trainable_adapter_name].l1ra_lambda = self.stored_l1ra_lambda
+        return super().train(mode)

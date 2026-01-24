@@ -1,0 +1,41 @@
+# @package _global_
+
+# Minimal LoRA experiment config (core knobs only)
+defaults:
+  - override /model: causal_lm_lora
+  - override /data: cot_cooking
+  - override /callbacks: lm_default
+  - override /logger: mlflow
+  - override /trainer: gpu
+  - _self_
+
+
+model:
+  adapter_type: lora
+  model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct
+
+  optimizer:
+    lr: 2e-4
+
+  scheduler:
+    _target_: transformers.get_linear_schedule_with_warmup
+    _partial_: true
+    num_warmup_steps: 50
+
+data:
+  max_length: 1024
+  batch_size: 8
+
+trainer:
+  max_epochs: 3
+
+seed: 42
+
+test: False
+
+logger:
+  mlflow:
+    tracking_uri: http://127.0.0.1:5000
+    experiment_name: "lora_base_cot_cooking"
+    run_name: "qwen_lora_base"
+
