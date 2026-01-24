@@ -2,11 +2,10 @@ import warnings
 from typing import Any, List, Optional
 
 import torch
-from torch import nn
-
 from peft.tuners.lora import LoraLayer
 from peft.tuners.tuners_utils import check_adapters_to_merge
 from peft.utils import transpose
+from torch import nn
 
 
 class L1RALayer(LoraLayer):
@@ -106,7 +105,10 @@ class L1RALinear(nn.Module, L1RALayer):
 
     def get_delta_weight(self, adapter) -> torch.Tensor:
         return (
-            transpose(self.lora_B[adapter] @ (self.lora_A[adapter] * self.lora_c[adapter]), self.fan_in_fan_out)
+            transpose(
+                self.lora_B[adapter] @ (self.lora_A[adapter] * self.lora_c[adapter]),
+                self.fan_in_fan_out,
+            )
             * self.scaling[adapter]
         )
 

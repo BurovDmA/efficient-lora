@@ -48,5 +48,3 @@ class SavePeftAdapterCallback(Callback):
         if not self.save_on_train_end:
             return
         self._save(trainer, pl_module, tag="final")
-
-

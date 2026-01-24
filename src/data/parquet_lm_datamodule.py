@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from glob import glob
 import os
+from glob import glob
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import torch
@@ -16,11 +16,11 @@ class CausalLMCollator:
         self.tokenizer = tokenizer
         self.label_pad_token_id = label_pad_token_id
 
-    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
         has_labels = "labels" in features[0]
 
         # tokenizer.pad can't handle ragged `labels`, so drop them before padding
-        features_no_labels: List[Dict[str, Any]] = []
+        features_no_labels: list[dict[str, Any]] = []
         for f in features:
             if has_labels and "labels" in f:
                 f = {k: v for k, v in f.items() if k != "labels"}
@@ -37,7 +37,7 @@ class CausalLMCollator:
 
         if has_labels:
             # If labels were precomputed (e.g., prompt-masked), pad them to match input length.
-            padded_labels: List[List[int]] = []
+            padded_labels: list[list[int]] = []
             max_len = int(input_ids.shape[1])
             for f in features:
                 lab = list(f["labels"])
@@ -66,9 +66,9 @@ class ParquetCausalLMDataModule(LightningDataModule):
 
     def __init__(
         self,
-        data_files: Union[str, Sequence[str]],
+        data_files: str | Sequence[str],
         tokenizer_name_or_path: str,
-        data_dir: Optional[str] = None,
+        data_dir: str | None = None,
         batch_size: int = 2,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -77,10 +77,10 @@ class ParquetCausalLMDataModule(LightningDataModule):
         max_length: int = 1024,
         add_eos: bool = True,
         trust_remote_code: bool = True,
-        text_column: Optional[str] = None,
-        prompt_template: Optional[str] = None,
+        text_column: str | None = None,
+        prompt_template: str | None = None,
         use_chat_template: bool = False,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(logger=False)
@@ -93,7 +93,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
         self._tokenizer = None
         self._collator = None
 
-    def _resolve_files(self) -> List[str]:
+    def _resolve_files(self) -> list[str]:
         data_files = self.hparams.data_files
         data_dir = self.hparams.data_dir
         if isinstance(data_files, str):
@@ -103,7 +103,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
                 path = os.path.join(data_dir, path)
             expanded = glob(path)
             return expanded if expanded else [data_files]
-        out: List[str] = []
+        out: list[str] = []
         for item in list(data_files):
             if isinstance(item, str):
                 path = item
@@ -118,7 +118,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
         import datasets as _  # noqa: F401
         import transformers as _t  # noqa: F401
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         # Divide batch size by the number of devices.
         if self.trainer is not None:
             if self.hparams.batch_size % self.trainer.world_size != 0:
@@ -155,7 +155,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
         text_column = self.hparams.text_column
         prompt_template = self.hparams.prompt_template
 
-        def _row_to_text(ex: Dict[str, Any]) -> str:
+        def _row_to_text(ex: dict[str, Any]) -> str:
             # explicit column wins
             if text_column and ex.get(text_column) is not None:
                 return str(ex[text_column])
@@ -167,7 +167,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
             out = ex.get("output")
 
             if self.hparams.use_chat_template and hasattr(tokenizer, "apply_chat_template"):
-                messages: List[Dict[str, str]] = []
+                messages: list[dict[str, str]] = []
                 if self.hparams.system_prompt:
                     messages.append({"role": "system", "content": str(self.hparams.system_prompt)})
 
@@ -207,7 +207,7 @@ class ParquetCausalLMDataModule(LightningDataModule):
                 return f"Instruction:\n{inp}\n\nResponse:\n{out}"
 
             # fallback: concatenate string-ish fields
-            parts: List[str] = []
+            parts: list[str] = []
             for k, v in ex.items():
                 if v is None:
                     continue
@@ -215,21 +215,25 @@ class ParquetCausalLMDataModule(LightningDataModule):
                     parts.append(f"{k}: {v}")
             return "\n".join(parts)
 
-        def _make_text(batch: Dict[str, List[Any]]) -> Dict[str, List[str]]:
-            texts: List[str] = []
+        def _make_text(batch: dict[str, list[Any]]) -> dict[str, list[str]]:
+            texts: list[str] = []
             keys = list(batch.keys())
             n = len(batch[keys[0]]) if keys else 0
             for i in range(n):
                 ex = {k: batch[k][i] for k in keys}
                 text = _row_to_text(ex)
-                if self.hparams.add_eos and tokenizer.eos_token is not None and not self.hparams.use_chat_template:
+                if (
+                    self.hparams.add_eos
+                    and tokenizer.eos_token is not None
+                    and not self.hparams.use_chat_template
+                ):
                     text = text + tokenizer.eos_token
                 texts.append(text)
             return {"text": texts}
 
         ds = ds.map(_make_text, batched=True, desc="Building text")
 
-        def _tokenize_plain(batch: Dict[str, List[str]]) -> Dict[str, Any]:
+        def _tokenize_plain(batch: dict[str, list[str]]) -> dict[str, Any]:
             tok = tokenizer(
                 batch["text"],
                 truncation=True,
@@ -241,14 +245,15 @@ class ParquetCausalLMDataModule(LightningDataModule):
             return tok
 
         if self.hparams.use_chat_template and hasattr(tokenizer, "apply_chat_template"):
-            def _tokenize_chat(ex: Dict[str, Any]) -> Dict[str, Any]:
+
+            def _tokenize_chat(ex: dict[str, Any]) -> dict[str, Any]:
                 q = ex.get("question")
                 r = ex.get("response")
                 a = ex.get("answer")
                 inp = ex.get("input")
                 out = ex.get("output")
 
-                messages: List[Dict[str, str]] = []
+                messages: list[dict[str, str]] = []
                 if self.hparams.system_prompt:
                     messages.append({"role": "system", "content": str(self.hparams.system_prompt)})
 
@@ -322,7 +327,9 @@ class ParquetCausalLMDataModule(LightningDataModule):
         # train/val split
         if not (0.0 < float(self.hparams.val_size) < 1.0):
             raise ValueError("val_size must be a float in (0, 1)")
-        split = ds.train_test_split(test_size=float(self.hparams.val_size), seed=int(self.hparams.seed))
+        split = ds.train_test_split(
+            test_size=float(self.hparams.val_size), seed=int(self.hparams.seed)
+        )
         self.data_train = split["train"].with_format("torch")
         self.data_val = split["test"].with_format("torch")
 
@@ -345,5 +352,3 @@ class ParquetCausalLMDataModule(LightningDataModule):
             shuffle=False,
             collate_fn=self._collator,
         )
-
-

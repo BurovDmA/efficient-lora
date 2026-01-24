@@ -3,5 +3,3 @@ defaults:
   - _self_
 
 data_files: ${data.data_dir}/mattwesney_CoT_Reasoning_Cooking_10000.parquet
-
-

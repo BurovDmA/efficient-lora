@@ -1,23 +1,21 @@
+import re
 import warnings
 from itertools import chain
-import re
 
 import torch
-from transformers.pytorch_utils import Conv1D
 import torch.nn.functional as F
-
 from peft.tuners.lora import LoraConfig, LoraModel
 from peft.tuners.tuners_utils import BaseTunerLayer
 from peft.utils import (
     TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING,
     _freeze_adapter,
 )
+from transformers.pytorch_utils import Conv1D
 
 from .layer import L1RALayer, L1RALinear
 
 
 class L1RAModel(LoraModel):
-
     def __init__(self, model, config, adapter_name):
         super().__init__(model, config, adapter_name)
 
@@ -68,8 +66,12 @@ class L1RAModel(LoraModel):
         parent,
         current_key,
     ):
-        pattern_keys = list(chain(lora_config.rank_pattern.keys(), lora_config.alpha_pattern.keys()))
-        target_name_key = next(filter(lambda key: re.match(rf".*\.{key}$", current_key), pattern_keys), current_key)
+        pattern_keys = list(
+            chain(lora_config.rank_pattern.keys(), lora_config.alpha_pattern.keys())
+        )
+        target_name_key = next(
+            filter(lambda key: re.match(rf".*\.{key}$", current_key), pattern_keys), current_key
+        )
         r = lora_config.rank_pattern.get(target_name_key, lora_config.r)
         alpha = lora_config.alpha_pattern.get(target_name_key, lora_config.lora_alpha)
 
@@ -128,7 +130,10 @@ class L1RAModel(LoraModel):
     @staticmethod
     def _prepare_adapter_config(peft_config, model_config):
         if peft_config.target_modules is None:
-            if model_config["model_type"] not in TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING:
+            if (
+                model_config["model_type"]
+                not in TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING
+            ):
                 raise ValueError("Please specify `target_modules` in `peft_config`")
             peft_config.target_modules = TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING[
                 model_config["model_type"]
@@ -176,7 +181,10 @@ class L1RAModel(LoraModel):
 
     def update_ranks(self, global_step, num_training_steps, num_warmup_steps):
         if 0 <= self.peft_config[self.trainable_adapter_name].rank_update_ratio < 1:
-            interval = int(self.peft_config[self.trainable_adapter_name].rank_update_ratio * num_training_steps)
+            interval = int(
+                self.peft_config[self.trainable_adapter_name].rank_update_ratio
+                * num_training_steps
+            )
         else:
             interval = int(self.peft_config[self.trainable_adapter_name].rank_update_ratio)
 

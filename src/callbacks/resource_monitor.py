@@ -86,5 +86,3 @@ class ResourceMonitorCallback(Callback):
                     self._log(pl_module, "sys/mps_allocated_mb", alloc_bytes / (1024**2))
         except Exception:
             pass
-
-

@@ -18,10 +18,10 @@ class CausalLMLoRALitModule(LightningModule):
         self,
         model_name_or_path: str,
         optimizer: torch.optim.Optimizer,
-        scheduler: Optional[Any] = None,
+        scheduler: Any | None = None,
         compile: bool = False,
         trust_remote_code: bool = True,
-        torch_dtype: Optional[str] = None,  # "auto" | "bf16" | "fp16" | "fp32"
+        torch_dtype: str | None = None,  # "auto" | "bf16" | "fp16" | "fp32"
         gradient_checkpointing: bool = True,
         use_cache: bool = False,
         # LoRA
@@ -29,10 +29,10 @@ class CausalLMLoRALitModule(LightningModule):
         lora_r: int = 16,
         lora_alpha: int = 32,
         lora_dropout: float = 0.05,
-        lora_target_modules: Optional[list[str]] = None,
+        lora_target_modules: list[str] | None = None,
         lora_bias: str = "none",
         # Optional: load existing adapter for continued training
-        lora_adapter_path: Optional[str] = None,
+        lora_adapter_path: str | None = None,
         # L1RA-specific
         l1ra_lambda: float = 1e-3,
         l1ra_eta_c: float = 1e-2,
@@ -42,7 +42,7 @@ class CausalLMLoRALitModule(LightningModule):
         l1ra_exclude_pruned: bool = True,
         l1ra_warmup_steps: int = 0,
         # Adapter saving (module-level)
-        save_adapter_dir: Optional[str] = None,
+        save_adapter_dir: str | None = None,
         save_adapter_every_n_epochs: int = 1,
         save_adapter_on_train_end: bool = True,
         # Resource logging (module-level)
@@ -54,7 +54,7 @@ class CausalLMLoRALitModule(LightningModule):
         self.model = None
         self._l1ra_real_step = 0
 
-    def _resolve_dtype(self) -> Optional[torch.dtype]:
+    def _resolve_dtype(self) -> torch.dtype | None:
         s = self.hparams.torch_dtype
         if s is None:
             return None
@@ -92,6 +92,7 @@ class CausalLMLoRALitModule(LightningModule):
 
         # LoRA/L1RA via PEFT
         from peft import LoraConfig, PeftModel, TaskType, get_peft_model
+
         from src.l1ra.tuner.config import L1RAConfig
 
         target_modules = self.hparams.lora_target_modules
@@ -128,7 +129,9 @@ class CausalLMLoRALitModule(LightningModule):
 
         if self.hparams.lora_adapter_path:
             # Load weights into current PEFT model
-            model = PeftModel.from_pretrained(model, self.hparams.lora_adapter_path, is_trainable=True)
+            model = PeftModel.from_pretrained(
+                model, self.hparams.lora_adapter_path, is_trainable=True
+            )
 
         # log trainable params (rank0 only happens via lightning log settings)
         try:
@@ -144,7 +147,7 @@ class CausalLMLoRALitModule(LightningModule):
     def forward(self, **batch: torch.Tensor) -> Any:
         return self.model(**batch)
 
-    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         if str(self.hparams.adapter_type).lower() == "l1ra":
             self._maybe_update_l1ra_ranks()
 
@@ -162,7 +165,7 @@ class CausalLMLoRALitModule(LightningModule):
         self._log_resources_if_needed()
         return loss
 
-    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+    def validation_step(self, batch: dict[str, torch.Tensor], batch_idx: int) -> None:
         out = self.model(**batch)
         loss = out.loss
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
@@ -237,11 +240,19 @@ class CausalLMLoRALitModule(LightningModule):
 
             proc = psutil.Process()
             mem = proc.memory_info()
-            self.log("sys/ram_rss_mb", mem.rss / (1024**2), on_step=True, on_epoch=False, logger=True)
-            self.log("sys/ram_vms_mb", mem.vms / (1024**2), on_step=True, on_epoch=False, logger=True)
+            self.log(
+                "sys/ram_rss_mb", mem.rss / (1024**2), on_step=True, on_epoch=False, logger=True
+            )
+            self.log(
+                "sys/ram_vms_mb", mem.vms / (1024**2), on_step=True, on_epoch=False, logger=True
+            )
             vm = psutil.virtual_memory()
-            self.log("sys/ram_used_mb", vm.used / (1024**2), on_step=True, on_epoch=False, logger=True)
-            self.log("sys/ram_percent", float(vm.percent), on_step=True, on_epoch=False, logger=True)
+            self.log(
+                "sys/ram_used_mb", vm.used / (1024**2), on_step=True, on_epoch=False, logger=True
+            )
+            self.log(
+                "sys/ram_percent", float(vm.percent), on_step=True, on_epoch=False, logger=True
+            )
         except Exception:
             pass
 
@@ -254,9 +265,23 @@ class CausalLMLoRALitModule(LightningModule):
                 max_alloc = torch.cuda.max_memory_allocated(device) / (1024**2)
                 max_reserved = torch.cuda.max_memory_reserved(device) / (1024**2)
                 self.log("sys/cuda_mem_alloc_mb", alloc, on_step=True, on_epoch=False, logger=True)
-                self.log("sys/cuda_mem_reserved_mb", reserved, on_step=True, on_epoch=False, logger=True)
-                self.log("sys/cuda_max_mem_alloc_mb", max_alloc, on_step=True, on_epoch=False, logger=True)
-                self.log("sys/cuda_max_mem_reserved_mb", max_reserved, on_step=True, on_epoch=False, logger=True)
+                self.log(
+                    "sys/cuda_mem_reserved_mb", reserved, on_step=True, on_epoch=False, logger=True
+                )
+                self.log(
+                    "sys/cuda_max_mem_alloc_mb",
+                    max_alloc,
+                    on_step=True,
+                    on_epoch=False,
+                    logger=True,
+                )
+                self.log(
+                    "sys/cuda_max_mem_reserved_mb",
+                    max_reserved,
+                    on_step=True,
+                    on_epoch=False,
+                    logger=True,
+                )
         except Exception:
             pass
 
@@ -266,11 +291,17 @@ class CausalLMLoRALitModule(LightningModule):
                 fn = getattr(torch.mps, "current_allocated_memory", None)
                 if callable(fn):
                     alloc_bytes = fn()
-                    self.log("sys/mps_allocated_mb", alloc_bytes / (1024**2), on_step=True, on_epoch=False, logger=True)
+                    self.log(
+                        "sys/mps_allocated_mb",
+                        alloc_bytes / (1024**2),
+                        on_step=True,
+                        on_epoch=False,
+                        logger=True,
+                    )
         except Exception:
             pass
 
-    def configure_optimizers(self) -> Dict[str, Any]:
+    def configure_optimizers(self) -> dict[str, Any]:
         if str(self.hparams.adapter_type).lower() == "l1ra":
             optimizer = self._create_l1ra_optimizer()
         else:
@@ -324,7 +355,9 @@ class CausalLMLoRALitModule(LightningModule):
             param_groups.append(
                 {
                     "params": ab_params,
-                    "weight_decay": float(getattr(self.hparams.optimizer, "keywords", {}).get("weight_decay", 0.0)),
+                    "weight_decay": float(
+                        getattr(self.hparams.optimizer, "keywords", {}).get("weight_decay", 0.0)
+                    ),
                 }
             )
 
@@ -358,7 +391,9 @@ class CausalLMLoRALitModule(LightningModule):
         if num_training_steps <= 0:
             return
         num_warmup_steps = int(self.hparams.l1ra_warmup_steps)
-        updated = self.model.update_ranks(self._l1ra_real_step, num_training_steps, num_warmup_steps)
+        updated = self.model.update_ranks(
+            self._l1ra_real_step, num_training_steps, num_warmup_steps
+        )
         if updated:
             self._restart_optimizer()
         self._l1ra_real_step += 1
@@ -380,5 +415,3 @@ class CausalLMLoRALitModule(LightningModule):
                         pass
         except Exception:
             pass
-
-

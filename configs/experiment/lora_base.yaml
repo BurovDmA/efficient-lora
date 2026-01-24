@@ -9,7 +9,6 @@ defaults:
   - override /trainer: gpu
   - _self_
 
-
 model:
   adapter_type: lora
   model_name_or_path: Qwen/Qwen2.5-0.5B-Instruct
@@ -38,4 +37,3 @@ logger:
     tracking_uri: http://127.0.0.1:5000
     experiment_name: "lora_base_cot_cooking"
     run_name: "qwen_lora_base"
-

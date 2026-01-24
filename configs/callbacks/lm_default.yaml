@@ -12,7 +12,7 @@ model_checkpoint:
   monitor: "val/loss"
   mode: "min"
   save_last: False
-  save_top_k: 0  # avoid huge full-model checkpoints; rely on adapter saving callback
+  save_top_k: 0 # avoid huge full-model checkpoints; rely on adapter saving callback
   auto_insert_metric_name: False
 
 early_stopping:
@@ -22,5 +22,3 @@ early_stopping:
 
 model_summary:
   max_depth: 2
-
-

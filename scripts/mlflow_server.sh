@@ -20,5 +20,3 @@ mlflow server \
   --default-artifact-root "./mlruns" \
   --host "${HOST}" \
   --port "${PORT}"
-
-

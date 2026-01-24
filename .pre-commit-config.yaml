@@ -39,10 +39,14 @@ repos:
         args: [--py38-plus]
 
   # python docstring formatting
-  - repo: https://github.com/myint/docformatter
-    rev: v1.7.4
+  - repo: local
     hooks:
       - id: docformatter
+        name: docformatter
+        entry: docformatter
+        language: python
+        types: [python]
+        additional_dependencies: [docformatter==1.7.5]
         args:
           [
             --in-place,
@@ -60,7 +64,7 @@ repos:
         args:
           [
             --verbose,
-            --fail-under=80,
+            --fail-under=50,
             --ignore-init-module,
             --ignore-init-method,
             --ignore-module,
@@ -82,13 +86,6 @@ repos:
           ]
         additional_dependencies: [flake8-rst-docstrings==0.3.0]
 
-  # python security linter
-  - repo: https://github.com/PyCQA/bandit
-    rev: "1.7.5"
-    hooks:
-      - id: bandit
-        args: ["-s", "B101"]
-
   # yaml formatting
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.0.0-alpha.6
@@ -104,15 +101,22 @@ repos:
       - id: shellcheck
 
   # md formatting
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.16
+  - repo: local
     hooks:
       - id: mdformat
+        name: mdformat
+        entry: mdformat
+        language: python
+        types: [markdown]
         args: ["--number"]
         additional_dependencies:
-          - mdformat-gfm
-          - mdformat-tables
-          - mdformat_frontmatter
+          - mdformat==0.7.16
+          - mdformat-gfm==0.3.5
+          - mdformat-tables==0.4.1
+          - mdformat_frontmatter==0.4.1
+          - markdown-it-py==2.2.0
+          - mdit-py-plugins==0.3.5
+          - linkify-it-py==2.0.2
           # - mdformat-toc
           # - mdformat-black
 

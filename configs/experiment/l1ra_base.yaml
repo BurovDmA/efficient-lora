@@ -53,4 +53,3 @@ logger:
     tracking_uri: http://127.0.0.1:5000
     experiment_name: "l1ra_base_cot_cooking"
     run_name: "qwen_l1ra_base"
-

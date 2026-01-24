@@ -10,7 +10,7 @@ gradient_checkpointing: True
 use_cache: False
 
 # LoRA params
-adapter_type: lora  # lora | l1ra
+adapter_type: lora # lora | l1ra
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05
@@ -52,5 +52,3 @@ save_adapter_on_train_end: True
 
 # Resource logging (handled inside LightningModule)
 log_resource_every_n_steps: 50
-
-

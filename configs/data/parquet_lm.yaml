@@ -31,5 +31,3 @@ prompt_template: null
 # If True and tokenizer supports it, will format each row as chat messages
 use_chat_template: True
 system_prompt: null
-
-
